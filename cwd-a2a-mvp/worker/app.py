@@ -100,31 +100,42 @@ async def execute_task_http(request: ExecuteTaskRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.a2a.skill(
-    name="execute_task",
-    description="Execute an assigned task with progress tracking"
-)
-async def a2a_execute_task(task: dict, incident_id: str = None, callback_url: str = None) -> dict:
+@app.post("/a2a/execute_task")
+async def a2a_execute_task(request: ExecuteTaskRequest) -> dict:
     """
     A2A skill endpoint: execute_task
-    Called by Delegator via A2A protocol.
+    Called by Delegator via A2A HTTP protocol.
     
     Args:
-        task: Task dictionary with task_id and description
-        incident_id: Optional unique incident identifier
-        callback_url: Optional URL for status callbacks
+        request: ExecuteTaskRequest with task details
         
     Returns:
         Execution result dict
     """
-    return await worker_skills.execute_task(
-        task=task,
-        incident_id=incident_id,
-        callback_url=callback_url
-    )
+    try:
+        result = await worker_skills.execute_task(
+            task=request.task,
+            incident_id=request.incident_id,
+            callback_url=request.callback_url
+        )
+        logger.info(f"Task execution completed: {result['status']}")
+        return result
+    except Exception as e:
+        logger.error(f"Error executing task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
+    # Copy .env if it doesn't exist
+    if not os.path.exists(".env"):
+        if os.path.exists(".env.example"):
+            import shutil
+            shutil.copy(".env.example", ".env")
+    
+    # Load env vars
+    from dotenv import load_dotenv
+    load_dotenv()
+    
     # Run with uvicorn on port 8003
     uvicorn.run(
         app,

@@ -5,12 +5,12 @@ Exposes accept_tasks and delegate_to_workers skills.
 
 import logging
 import asyncio
+import httpx
 from typing import Optional
 
 from common.models import Task
 from common.langgraph_state import create_delegator_state, log_state_message
 from common.redis_utils import write_task_status, publish_status_event
-from common.a2a_client import create_worker_client
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class DelegatorSkillsServer:
         retry_count: int = 1
     ) -> bool:
         """
-        Execute a task on a worker via A2A protocol and monitor status.
+        Execute a task on a worker via A2A HTTP protocol and monitor status.
         Includes retry logic and Redis updates.
         
         Args:
@@ -158,12 +158,18 @@ class DelegatorSkillsServer:
                     }
                 )
                 
-                # Call worker's execute_task skill via A2A
-                worker_client = create_worker_client(worker_url)
-                result = await worker_client.call_skill(
-                    skill_name="execute_task",
-                    task=task.model_dump()
-                )
+                # Call worker's execute_task skill via A2A HTTP protocol
+                skill_url = f"{worker_url}/a2a/execute_task"
+                payload = {
+                    "task": task.model_dump(),
+                    "incident_id": incident_id,
+                    "callback_url": worker_url
+                }
+                
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(skill_url, json=payload, timeout=30.0)
+                    response.raise_for_status()
+                    result = response.json()
                 
                 # If successful, mark complete
                 state["active_tasks"][task.task_id]["status"] = "completed"

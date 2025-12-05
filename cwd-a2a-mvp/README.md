@@ -74,13 +74,26 @@ A proof-of-concept implementation demonstrating a **Coordinator-Delegator-Worker
 
 ### A2A Protocol Usage
 
-All inter-agent communication follows the **Google A2A Protocol**:
+All inter-agent communication follows the **Agent-to-Agent (A2A) Protocol** via HTTP POST:
 
-| Agent | Direction | Skill Name | Input | Output |
-|-------|-----------|-----------|-------|--------|
-| Coordinator → Delegator | A2A | `accept_tasks()` | incident_id, tasks[] | {status: "accepted", task_count} |
-| Delegator → Worker | A2A | `execute_task()` | task dict | {status: "completed"/"failed"} |
-| Worker → Delegator | A2A | (callback/streaming) | status updates | (acknowledged) |
+**A2A Skill Endpoints** (all POST requests with JSON payloads):
+
+| Agent | Endpoint | Method | Skill Name | Input JSON | Output JSON |
+|-------|----------|--------|-----------|-----------|------------|
+| Coordinator | `/a2a/assign_incident_tasks` | POST | assign_incident_tasks | `{incident_text: string}` | `{incident_id, tasks[]}` |
+| Delegator | `/a2a/accept_tasks` | POST | accept_tasks | `{incident_id, tasks[]}` | `{status, task_count}` |
+| Delegator | `/a2a/delegate_to_workers` | POST | delegate_to_workers | `{incident_id}` | `{status, delegated_count}` |
+| Worker | `/a2a/execute_task` | POST | execute_task | `{task, incident_id}` | `{status, message, timestamp}` |
+
+**Example A2A Call** (Coordinator → Delegator):
+```bash
+curl -X POST http://localhost:8002/a2a/accept_tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "incident_id": "550e8400-e29b-41d4-a716-446655440000",
+    "tasks": [{"task_id": "...", "description": "..."}]
+  }'
+```
 
 ## Project Structure
 
@@ -256,6 +269,22 @@ curl http://localhost:8002/health | jq .
 # Check Worker health
 curl http://localhost:8003/health | jq .
 ```
+
+### Run Integration Test
+
+With all three agents running, execute the integration test in a fourth terminal:
+
+```bash
+cd /workspaces/cwd-langgraph-mvp/cwd-a2a-mvp
+python test_integration.py
+```
+
+This tests:
+1. Agent health checks
+2. Incident creation via HTTP
+3. A2A skill communication (Delegator accept_tasks)
+4. Task delegation and execution
+5. Complete workflow end-to-end
 
 ## Extending the MVP
 

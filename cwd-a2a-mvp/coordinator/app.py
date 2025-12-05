@@ -25,11 +25,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
+import httpx
 
 from common.models import IncidentRequest, TaskAssignmentResponse, Task
 from common.langgraph_state import create_coordinator_state, log_state_message
 from common.llm_stub import incident_to_tasks
-from common.a2a_client import create_delegator_client
 from common.redis_utils import subscribe_to_status_events, health_check
 from coordinator.a2a_server import CoordinatorSkillsServer
 
@@ -91,24 +91,27 @@ def subscribe_to_incident_updates(incident_id: str):
 
 async def delegate_tasks_to_delegator(incident_id: str, tasks: list[Task]):
     """
-    Send tasks to Delegator via A2A protocol.
+    Send tasks to Delegator via A2A HTTP protocol.
     
     Args:
         incident_id: Unique incident identifier
         tasks: List of tasks to delegate
     """
     try:
-        delegator_client = create_delegator_client()
+        delegator_url = os.getenv("DELEGATOR_URL", "http://localhost:8002")
+        skill_url = f"{delegator_url}/a2a/accept_tasks"
+        
         logger.info(f"Calling delegator A2A skill: accept_tasks for incident {incident_id}")
         
-        # Call Delegator's accept_tasks skill via A2A
-        # This assumes the A2A SDK provides a method to call remote skills
-        # Adjust based on actual A2A SDK API
-        result = await delegator_client.call_skill(
-            skill_name="accept_tasks",
-            incident_id=incident_id,
-            tasks=[t.model_dump() for t in tasks]
-        )
+        payload = {
+            "incident_id": incident_id,
+            "tasks": [t.model_dump() for t in tasks]
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(skill_url, json=payload, timeout=30.0)
+            response.raise_for_status()
+            result = response.json()
         
         logger.info(f"Delegator accepted tasks for incident {incident_id}: {result}")
     except Exception as e:
@@ -192,26 +195,38 @@ async def create_incident(request: IncidentRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.a2a.skill(
-    name="assign_incident_tasks",
-    description="Assign tasks to an incident using LLM analysis"
-)
-async def a2a_assign_incident_tasks(incident_text: str) -> TaskAssignmentResponse:
+@app.post("/a2a/assign_incident_tasks")
+async def a2a_assign_incident_tasks(request: IncidentRequest) -> dict:
     """
     A2A skill endpoint: assign_incident_tasks
-    Called by other agents via A2A protocol.
+    Called by other agents via A2A HTTP protocol.
     
     Args:
-        incident_text: Description of the incident
+        request: IncidentRequest with incident_text
         
     Returns:
-        TaskAssignmentResponse with incident_id and tasks
+        JSON response with incident_id and tasks
     """
-    incident_id = str(uuid.uuid4())
-    return coordinator_skills.assign_incident_tasks(incident_text, incident_id)
+    try:
+        incident_id = str(uuid.uuid4())
+        response = coordinator_skills.assign_incident_tasks(request.incident_text, incident_id)
+        return response.model_dump()
+    except Exception as e:
+        logger.error(f"Error in A2A assign_incident_tasks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
+    # Copy .env if it doesn't exist
+    if not os.path.exists(".env"):
+        if os.path.exists(".env.example"):
+            import shutil
+            shutil.copy(".env.example", ".env")
+    
+    # Load env vars
+    from dotenv import load_dotenv
+    load_dotenv()
+    
     # Run with uvicorn on port 8001
     uvicorn.run(
         app,

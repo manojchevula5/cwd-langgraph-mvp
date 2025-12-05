@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
+import httpx
 
 from common.models import Task, StatusUpdate
 from common.redis_utils import health_check
@@ -144,51 +145,44 @@ async def delegate_tasks_http(request: DelegateTasksRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.a2a.skill(
-    name="accept_tasks",
-    description="Accept tasks from Coordinator for an incident"
-)
-async def a2a_accept_tasks(incident_id: str, tasks: list[dict]) -> dict:
+@app.post("/a2a/accept_tasks")
+async def a2a_accept_tasks(request: AcceptTasksRequest) -> dict:
     """
     A2A skill endpoint: accept_tasks
-    Called by Coordinator via A2A protocol.
+    Called by Coordinator via A2A HTTP protocol.
     
     Args:
-        incident_id: Unique incident identifier
-        tasks: List of task dictionaries
+        request: AcceptTasksRequest with incident_id and tasks
         
     Returns:
         Acknowledgment dict
     """
-    return delegator_skills.accept_tasks(incident_id, tasks)
+    return delegator_skills.accept_tasks(request.incident_id, request.tasks)
 
 
-@app.a2a.skill(
-    name="delegate_to_workers",
-    description="Delegate accepted tasks to available workers"
-)
-async def a2a_delegate_to_workers(incident_id: str) -> dict:
+@app.post("/a2a/delegate_to_workers")
+async def a2a_delegate_to_workers(request: DelegateTasksRequest) -> dict:
     """
     A2A skill endpoint: delegate_to_workers
     Called internally or by Coordinator after accept_tasks.
     
     Args:
-        incident_id: Unique incident identifier
+        request: DelegateTasksRequest with incident_id
         
     Returns:
         Delegation status dict
     """
-    result = delegator_skills.delegate_to_workers(incident_id)
+    result = delegator_skills.delegate_to_workers(request.incident_id)
     
     # Start execution asynchronously
-    incident_id_var = incident_id
-    state = delegator_skills.get_incident_state(incident_id_var)
+    incident_id = request.incident_id
+    state = delegator_skills.get_incident_state(incident_id)
     
     if state and state["tasks"]:
         tasks = state["tasks"]
         execution_coros = [
             delegator_skills.execute_task_on_worker(
-                incident_id_var,
+                incident_id,
                 task,
                 task.assigned_worker_url or "http://localhost:8003"
             )
@@ -200,6 +194,16 @@ async def a2a_delegate_to_workers(incident_id: str) -> dict:
 
 
 if __name__ == "__main__":
+    # Copy .env if it doesn't exist
+    if not os.path.exists(".env"):
+        if os.path.exists(".env.example"):
+            import shutil
+            shutil.copy(".env.example", ".env")
+    
+    # Load env vars
+    from dotenv import load_dotenv
+    load_dotenv()
+    
     # Run with uvicorn on port 8002
     uvicorn.run(
         app,

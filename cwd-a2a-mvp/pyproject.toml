@@ -8,13 +8,12 @@ version = "0.1.0"
 description = "Three-agent CWD architecture with A2A protocol and Redis shared state"
 requires-python = ">=3.9"
 dependencies = [
-    "a2a-sdk[http-server]>=0.1.0",
     "redis>=5.0.0",
-    "langgraph>=0.1.0",
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
+    "httpx>=0.24.0",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +22,5 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
 ]
+[tool.hatch.build.targets.wheel]
+packages = ["cwd_a2a_mvp"]
