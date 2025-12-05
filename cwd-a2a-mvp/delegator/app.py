@@ -128,15 +128,17 @@ async def delegate_tasks_http(request: DelegateTasksRequest) -> dict:
         if state and state["tasks"]:
             # Launch all task executions concurrently
             tasks = state["tasks"]
-            execution_coros = [
-                delegator_skills.execute_task_on_worker(
-                    incident_id,
-                    task,
-                    task.assigned_worker_url or "http://localhost:8003"
-                )
-                for task in tasks
-            ]
-            asyncio.create_task(asyncio.gather(*execution_coros, return_exceptions=True))
+            async def run_tasks():
+                execution_coros = [
+                    delegator_skills.execute_task_on_worker(
+                        incident_id,
+                        task,
+                        task.assigned_worker_url or "http://localhost:8003"
+                    )
+                    for task in tasks
+                ]
+                await asyncio.gather(*execution_coros, return_exceptions=True)
+            asyncio.create_task(run_tasks())
             logger.info(f"Started execution of {len(tasks)} tasks for incident {incident_id}")
         
         return result
@@ -180,15 +182,17 @@ async def a2a_delegate_to_workers(request: DelegateTasksRequest) -> dict:
     
     if state and state["tasks"]:
         tasks = state["tasks"]
-        execution_coros = [
-            delegator_skills.execute_task_on_worker(
-                incident_id,
-                task,
-                task.assigned_worker_url or "http://localhost:8003"
-            )
-            for task in tasks
-        ]
-        asyncio.create_task(asyncio.gather(*execution_coros, return_exceptions=True))
+        async def run_tasks():
+            execution_coros = [
+                delegator_skills.execute_task_on_worker(
+                    incident_id,
+                    task,
+                    task.assigned_worker_url or "http://localhost:8003"
+                )
+                for task in tasks
+            ]
+            await asyncio.gather(*execution_coros, return_exceptions=True)
+        asyncio.create_task(run_tasks())
     
     return result
 

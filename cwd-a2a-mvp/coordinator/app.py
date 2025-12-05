@@ -99,8 +99,9 @@ async def delegate_tasks_to_delegator(incident_id: str, tasks: list[Task]):
     """
     try:
         delegator_url = os.getenv("DELEGATOR_URL", "http://localhost:8002")
-        skill_url = f"{delegator_url}/a2a/accept_tasks"
         
+        # Step 1: Call accept_tasks
+        accept_tasks_url = f"{delegator_url}/a2a/accept_tasks"
         logger.info(f"Calling delegator A2A skill: accept_tasks for incident {incident_id}")
         
         payload = {
@@ -109,11 +110,24 @@ async def delegate_tasks_to_delegator(incident_id: str, tasks: list[Task]):
         }
         
         async with httpx.AsyncClient() as client:
-            response = await client.post(skill_url, json=payload, timeout=30.0)
+            response = await client.post(accept_tasks_url, json=payload, timeout=30.0)
             response.raise_for_status()
             result = response.json()
         
         logger.info(f"Delegator accepted tasks for incident {incident_id}: {result}")
+        
+        # Step 2: Trigger delegation to workers
+        delegate_url = f"{delegator_url}/a2a/delegate_to_workers"
+        logger.info(f"Calling delegator A2A skill: delegate_to_workers for incident {incident_id}")
+        
+        delegate_payload = {"incident_id": incident_id}
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(delegate_url, json=delegate_payload, timeout=30.0)
+            response.raise_for_status()
+            delegate_result = response.json()
+        
+        logger.info(f"Delegator delegated tasks to workers for incident {incident_id}: {delegate_result}")
     except Exception as e:
         logger.error(f"Failed to delegate tasks to delegator: {e}")
 
