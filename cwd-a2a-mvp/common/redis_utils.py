@@ -33,42 +33,44 @@ def get_redis_client() -> redis.Redis:
 
 
 def write_task_status(
-    incident_id: str, 
+    request_id: str, 
     task_id: str, 
     status_dict: dict
 ) -> None:
     """
-    Write task status to Redis hash: incident:{incident_id}:task:{task_id}
+    Write task status to Redis hash: request:{request_id}:task:{task_id}
     
     Args:
-        incident_id: Unique incident identifier
+        request_id: Unique request identifier
         task_id: Unique task identifier
         status_dict: Dictionary with fields: status, updated_at, worker_id, message
     """
     client = get_redis_client()
-    key = f"incident:{incident_id}:task:{task_id}"
+    key = f"request:{request_id}:task:{task_id}"
     
     # Add timestamp if not provided
     if "updated_at" not in status_dict:
         status_dict["updated_at"] = datetime.utcnow().isoformat()
     
     try:
-        client.hset(key, mapping=status_dict)
+        # Use hmset for compatibility with older Redis servers (pre-4.0)
+        # client.hset(key, mapping=status_dict) relies on Redis 4.0+
+        client.hmset(key, status_dict)
         logger.info(f"Wrote task status: {key} = {status_dict}")
     except Exception as e:
         logger.error(f"Failed to write task status to Redis: {e}")
 
 
-def publish_status_event(incident_id: str, event_dict: dict) -> None:
+def publish_status_event(request_id: str, event_dict: dict) -> None:
     """
-    Publish a status event to Redis Pub/Sub channel: incident:{incident_id}:status
+    Publish a status event to Redis Pub/Sub channel: request:{request_id}:status
     
     Args:
-        incident_id: Unique incident identifier
+        request_id: Unique request identifier
         event_dict: Event data (task_id, status, progress, message, timestamp)
     """
     client = get_redis_client()
-    channel = f"incident:{incident_id}:status"
+    channel = f"request:{request_id}:status"
     
     # Ensure timestamp is in event
     if "timestamp" not in event_dict:
@@ -84,22 +86,22 @@ def publish_status_event(incident_id: str, event_dict: dict) -> None:
 
 
 def subscribe_to_status_events(
-    incident_id: str,
+    request_id: str,
     callback: Callable[[dict], None],
     timeout: Optional[float] = None
 ) -> None:
     """
-    Subscribe to status events for an incident and call callback on each message.
+    Subscribe to status events for a request and call callback on each message.
     Blocks until timeout or manually stopped.
     
     Args:
-        incident_id: Unique incident identifier
+        request_id: Unique request identifier
         callback: Function to call on each message, receives parsed event dict
         timeout: Seconds to listen before returning (None = indefinite)
     """
     client = get_redis_client()
     pubsub = client.pubsub()
-    channel = f"incident:{incident_id}:status"
+    channel = f"request:{request_id}:status"
     
     try:
         pubsub.subscribe(channel)
@@ -121,19 +123,19 @@ def subscribe_to_status_events(
         logger.info(f"Unsubscribed from {channel}")
 
 
-def read_task_status(incident_id: str, task_id: str) -> Optional[dict]:
+def read_task_status(request_id: str, task_id: str) -> Optional[dict]:
     """
     Read current task status from Redis hash.
     
     Args:
-        incident_id: Unique incident identifier
+        request_id: Unique request identifier
         task_id: Unique task identifier
         
     Returns:
         Task status dict or None if not found
     """
     client = get_redis_client()
-    key = f"incident:{incident_id}:task:{task_id}"
+    key = f"request:{request_id}:task:{task_id}"
     
     try:
         status = client.hgetall(key)

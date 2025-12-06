@@ -8,7 +8,7 @@ All three agents are **fully implemented, debugged, and working end-to-end**.
 
 **Three autonomous agents** implementing a Coordinator-Delegator-Worker architecture with HTTP-based A2A protocol communication:
 
-- **Coordinator (port 8001)**: Incident planning, LLM task generation, status monitoring
+- **Coordinator (port 8001)**: Work request planning, LLM task generation, status monitoring
 - **Delegator (port 8002)**: Task routing, worker delegation, Redis state management  
 - **Worker (port 8003)**: Task execution with progress tracking
 
@@ -38,16 +38,16 @@ All inter-agent communication is HTTP POST to `/a2a/{skill_name}` endpoints:
 
 | Endpoint | Method | Input | Output |
 |----------|--------|-------|--------|
-| `/a2a/assign_incident_tasks` | POST | `{incident_text}` | `{incident_id, tasks[]}` |
-| `/a2a/accept_tasks` | POST | `{incident_id, tasks[]}` | `{status, task_count}` |
-| `/a2a/delegate_to_workers` | POST | `{incident_id}` | `{status, delegated_count}` |
-| `/a2a/execute_task` | POST | `{task, incident_id}` | `{status, message, timestamp}` |
+| `/a2a/assign_tasks` | POST | `{description}` | `{request_id, tasks[]}` |
+| `/a2a/accept_tasks` | POST | `{request_id, tasks[]}` | `{status, task_count}` |
+| `/a2a/delegate_to_workers` | POST | `{request_id}` | `{status, delegated_count}` |
+| `/a2a/execute_task` | POST | `{task, request_id}` | `{status, message, timestamp}` |
 
 ### Verified Functionality
 
 ✅ **Agent Startup**: All three agents start cleanly on ports 8001, 8002, 8003
 ✅ **Health Checks**: `/health` endpoints return agent status
-✅ **Incident Creation**: HTTP POST `/incident` generates 3 tasks via stub LLM
+✅ **Request Creation**: HTTP POST `/request` generates 3 tasks via stub LLM
 ✅ **Task Delegation**: Coordinator calls Delegator's A2A skill (HTTP POST)
 ✅ **Worker Execution**: Delegator calls Worker's A2A skill with task details
 ✅ **State Management**: Local LangGraph state in each agent
@@ -56,7 +56,7 @@ All inter-agent communication is HTTP POST to `/a2a/{skill_name}` endpoints:
 ### Test Run Results
 
 ```
-Incident submitted: fb5ebb46-f18a-431b-be9b-0a64c6037660
+Request submitted: fb5ebb46-f18a-431b-be9b-0a64c6037660
 Tasks generated: 3
   - Diagnose service status and root cause (high priority)
   - Apply fix or mitigation (high priority)
@@ -87,10 +87,10 @@ python3 delegator/app.py
 # Terminal 3: Worker
 python3 worker/app.py
 
-# Terminal 4: Send incident
-curl -X POST http://localhost:8001/incident \
+# Terminal 4: Send request
+curl -X POST http://localhost:8001/request \
   -H "Content-Type: application/json" \
-  -d '{"incident_text": "Database connection pool exhausted"}'
+  -d '{"description": "Database connection pool exhausted"}'
 ```
 
 ### Configuration
@@ -135,5 +135,5 @@ python test_integration.py
 
 ---
 
-**Implementation Date**: December 5, 2025  
+**Implementation Date**: December 6, 2025  
 **Status**: Ready for testing and extension

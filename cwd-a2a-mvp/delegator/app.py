@@ -4,7 +4,7 @@ Delegator agent - routes and monitors task execution.
 Listens on http://localhost:8002
 
 Responsibilities:
-- Expose A2A skills: accept_tasks(incident_id, tasks[]) and delegate_to_workers(incident_id)
+- Expose A2A skills: accept_tasks(request_id, tasks[]) and delegate_to_workers(request_id)
 - Receive tasks from Coordinator via A2A
 - Delegate tasks to Workers via A2A protocol
 - Write task status to Redis hashes
@@ -42,13 +42,13 @@ delegator_skills = DelegatorSkillsServer()
 
 class AcceptTasksRequest(BaseModel):
     """Request to accept tasks from Coordinator."""
-    incident_id: str
+    request_id: str
     tasks: list[dict]
 
 
 class DelegateTasksRequest(BaseModel):
     """Request to delegate tasks to workers."""
-    incident_id: str
+    request_id: str
 
 
 async def lifespan(app: FastAPI):
@@ -93,14 +93,14 @@ async def accept_tasks_http(request: AcceptTasksRequest) -> dict:
     Also callable via A2A protocol.
     
     Args:
-        request: AcceptTasksRequest with incident_id and tasks
+        request: AcceptTasksRequest with request_id and tasks
         
     Returns:
         Acknowledgment dict
     """
     try:
-        result = delegator_skills.accept_tasks(request.incident_id, request.tasks)
-        logger.info(f"Tasks accepted for incident {request.incident_id}")
+        result = delegator_skills.accept_tasks(request.request_id, request.tasks)
+        logger.info(f"Tasks accepted for request {request.request_id}")
         return result
     except Exception as e:
         logger.error(f"Error accepting tasks: {e}")
@@ -113,17 +113,17 @@ async def delegate_tasks_http(request: DelegateTasksRequest) -> dict:
     HTTP endpoint to trigger delegation of accepted tasks to workers.
     
     Args:
-        request: DelegateTasksRequest with incident_id
+        request: DelegateTasksRequest with request_id
         
     Returns:
         Delegation status dict
     """
     try:
-        result = delegator_skills.delegate_to_workers(request.incident_id)
+        result = delegator_skills.delegate_to_workers(request.request_id)
         
         # Start execution of tasks asynchronously
-        incident_id = request.incident_id
-        state = delegator_skills.get_incident_state(incident_id)
+        request_id = request.request_id
+        state = delegator_skills.get_request_state(request_id)
         
         if state and state["tasks"]:
             # Launch all task executions concurrently
@@ -131,7 +131,7 @@ async def delegate_tasks_http(request: DelegateTasksRequest) -> dict:
             async def run_tasks():
                 execution_coros = [
                     delegator_skills.execute_task_on_worker(
-                        incident_id,
+                        request_id,
                         task,
                         task.assigned_worker_url or "http://localhost:8003"
                     )
@@ -139,7 +139,7 @@ async def delegate_tasks_http(request: DelegateTasksRequest) -> dict:
                 ]
                 await asyncio.gather(*execution_coros, return_exceptions=True)
             asyncio.create_task(run_tasks())
-            logger.info(f"Started execution of {len(tasks)} tasks for incident {incident_id}")
+            logger.info(f"Started execution of {len(tasks)} tasks for request {request_id}")
         
         return result
     except Exception as e:
@@ -154,12 +154,12 @@ async def a2a_accept_tasks(request: AcceptTasksRequest) -> dict:
     Called by Coordinator via A2A HTTP protocol.
     
     Args:
-        request: AcceptTasksRequest with incident_id and tasks
+        request: AcceptTasksRequest with request_id and tasks
         
     Returns:
         Acknowledgment dict
     """
-    return delegator_skills.accept_tasks(request.incident_id, request.tasks)
+    return delegator_skills.accept_tasks(request.request_id, request.tasks)
 
 
 @app.post("/a2a/delegate_to_workers")
@@ -169,23 +169,23 @@ async def a2a_delegate_to_workers(request: DelegateTasksRequest) -> dict:
     Called internally or by Coordinator after accept_tasks.
     
     Args:
-        request: DelegateTasksRequest with incident_id
+        request: DelegateTasksRequest with request_id
         
     Returns:
         Delegation status dict
     """
-    result = delegator_skills.delegate_to_workers(request.incident_id)
+    result = delegator_skills.delegate_to_workers(request.request_id)
     
     # Start execution asynchronously
-    incident_id = request.incident_id
-    state = delegator_skills.get_incident_state(incident_id)
+    request_id = request.request_id
+    state = delegator_skills.get_request_state(request_id)
     
     if state and state["tasks"]:
         tasks = state["tasks"]
         async def run_tasks():
             execution_coros = [
                 delegator_skills.execute_task_on_worker(
-                    incident_id,
+                    request_id,
                     task,
                     task.assigned_worker_url or "http://localhost:8003"
                 )

@@ -40,7 +40,7 @@ worker_skills = WorkerSkillsServer()
 class ExecuteTaskRequest(BaseModel):
     """Request to execute a task."""
     task: dict
-    incident_id: str = None
+    request_id: str = None
     callback_url: str = None
 
 
@@ -90,7 +90,7 @@ async def execute_task_http(request: ExecuteTaskRequest) -> dict:
     try:
         result = await worker_skills.execute_task(
             task=request.task,
-            incident_id=request.incident_id,
+            request_id=request.request_id,
             callback_url=request.callback_url
         )
         logger.info(f"Task execution completed: {result['status']}")
@@ -115,7 +115,7 @@ async def a2a_execute_task(request: ExecuteTaskRequest) -> dict:
     try:
         result = await worker_skills.execute_task(
             task=request.task,
-            incident_id=request.incident_id,
+            request_id=request.request_id,
             callback_url=request.callback_url
         )
         logger.info(f"Task execution completed: {result['status']}")

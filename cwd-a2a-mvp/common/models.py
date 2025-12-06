@@ -1,5 +1,5 @@
 """
-Pydantic models for incident, task, and status updates.
+Pydantic models for work items, tasks, and status updates.
 """
 
 from typing import Optional
@@ -9,7 +9,7 @@ import uuid
 
 
 class Task(BaseModel):
-    """Represents a single task derived from an incident."""
+    """Represents a single task derived from a work request."""
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     description: str
     priority: str = "normal"  # low, normal, high
@@ -25,18 +25,18 @@ class Task(BaseModel):
         }
 
 
-class Incident(BaseModel):
-    """Represents an incident with associated tasks."""
-    incident_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    incident_text: str
+class WorkItem(BaseModel):
+    """Represents a work item with associated tasks."""
+    request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    description: str
     tasks: list[Task] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     class Config:
         json_schema_extra = {
             "example": {
-                "incident_id": "550e8400-e29b-41d4-a716-446655440001",
-                "incident_text": "Service X is erroring",
+                "request_id": "550e8400-e29b-41d4-a716-446655440001",
+                "description": "Service X is erroring",
                 "tasks": [],
             }
         }
@@ -59,12 +59,12 @@ class StatusUpdate(BaseModel):
         }
 
 
-class IncidentRequest(BaseModel):
-    """HTTP request to POST /incident."""
-    incident_text: str
+class WorkRequest(BaseModel):
+    """HTTP request to POST /request."""
+    description: str
 
 
 class TaskAssignmentResponse(BaseModel):
-    """Response from coordinator's assign_incident_tasks skill."""
-    incident_id: str
+    """Response from coordinator's assign_tasks skill."""
+    request_id: str
     tasks: list[Task]

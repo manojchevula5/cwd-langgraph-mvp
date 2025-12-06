@@ -22,54 +22,54 @@ class DelegatorSkillsServer:
     
     def __init__(self):
         """Initialize delegator skills server."""
-        self.state_store = {}  # Simple in-memory store per incident_id
+        self.state_store = {}  # Simple in-memory store per request_id
         self.worker_urls = ["http://localhost:8003"]  # Config: add more workers here
     
-    def accept_tasks(self, incident_id: str, tasks: list[dict]) -> dict:
+    def accept_tasks(self, request_id: str, tasks: list[dict]) -> dict:
         """
         A2A skill: Accept tasks from Coordinator.
         
         Args:
-            incident_id: Unique incident identifier
+            request_id: Unique request identifier
             tasks: List of task dictionaries
             
         Returns:
-            Acknowledgment with incident_id and task count
+            Acknowledgment with request_id and task count
         """
-        logger.info(f"accept_tasks called: incident_id={incident_id}, task_count={len(tasks)}")
+        logger.info(f"accept_tasks called: request_id={request_id}, task_count={len(tasks)}")
         
         # Convert task dicts to Task objects
         task_objects = [Task(**t) if isinstance(t, dict) else t for t in tasks]
         
         # Initialize local state
-        state = create_delegator_state(incident_id, task_objects)
-        self.state_store[incident_id] = state
+        state = create_delegator_state(request_id, task_objects)
+        self.state_store[request_id] = state
         
         log_state_message(state, f"Accepted {len(task_objects)} tasks from Coordinator")
         
         return {
             "status": "accepted",
-            "incident_id": incident_id,
+            "request_id": request_id,
             "task_count": len(task_objects)
         }
     
-    def delegate_to_workers(self, incident_id: str) -> dict:
+    def delegate_to_workers(self, request_id: str) -> dict:
         """
         A2A skill: Delegate tasks to workers.
         Distributes tasks across available workers and initiates execution.
         
         Args:
-            incident_id: Unique incident identifier
+            request_id: Unique request identifier
             
         Returns:
             Status dict with delegation result
         """
-        logger.info(f"delegate_to_workers called: incident_id={incident_id}")
+        logger.info(f"delegate_to_workers called: request_id={request_id}")
         
-        state = self.state_store.get(incident_id)
+        state = self.state_store.get(request_id)
         if not state:
-            logger.error(f"No state found for incident {incident_id}")
-            return {"status": "error", "message": f"No state for {incident_id}"}
+            logger.error(f"No state found for request {request_id}")
+            return {"status": "error", "message": f"No state for {request_id}"}
         
         tasks = state["tasks"]
         logger.info(f"Delegating {len(tasks)} tasks to {len(self.worker_urls)} worker(s)")
@@ -90,7 +90,7 @@ class DelegatorSkillsServer:
             
             # Write initial status to Redis
             write_task_status(
-                incident_id,
+                request_id,
                 task.task_id,
                 {
                     "status": "queued",
@@ -103,13 +103,13 @@ class DelegatorSkillsServer:
         
         return {
             "status": "delegated",
-            "incident_id": incident_id,
+            "request_id": request_id,
             "delegated_count": len(tasks)
         }
     
     async def execute_task_on_worker(
         self,
-        incident_id: str,
+        request_id: str,
         task: Task,
         worker_url: str,
         retry_count: int = 1
@@ -119,7 +119,7 @@ class DelegatorSkillsServer:
         Includes retry logic and Redis updates.
         
         Args:
-            incident_id: Unique incident identifier
+            request_id: Unique request identifier
             task: Task to execute
             worker_url: Worker agent URL
             retry_count: Number of retries on failure
@@ -127,9 +127,9 @@ class DelegatorSkillsServer:
         Returns:
             True if successful, False if failed after retries
         """
-        state = self.state_store.get(incident_id)
+        state = self.state_store.get(request_id)
         if not state:
-            logger.error(f"No state for incident {incident_id}")
+            logger.error(f"No state for request {request_id}")
             return False
         
         attempt = 0
@@ -141,7 +141,7 @@ class DelegatorSkillsServer:
                 # Mark task as executing
                 state["active_tasks"][task.task_id]["status"] = "executing"
                 write_task_status(
-                    incident_id,
+                    request_id,
                     task.task_id,
                     {
                         "status": "executing",
@@ -150,7 +150,7 @@ class DelegatorSkillsServer:
                     }
                 )
                 publish_status_event(
-                    incident_id,
+                    request_id,
                     {
                         "task_id": task.task_id,
                         "status": "executing",
@@ -162,7 +162,7 @@ class DelegatorSkillsServer:
                 skill_url = f"{worker_url}/a2a/execute_task"
                 payload = {
                     "task": task.model_dump(),
-                    "incident_id": incident_id,
+                    "request_id": request_id,
                     "callback_url": worker_url
                 }
                 
@@ -176,7 +176,7 @@ class DelegatorSkillsServer:
                 state["completed_tasks"].append(task.task_id)
                 
                 write_task_status(
-                    incident_id,
+                    request_id,
                     task.task_id,
                     {
                         "status": "completed",
@@ -185,7 +185,7 @@ class DelegatorSkillsServer:
                     }
                 )
                 publish_status_event(
-                    incident_id,
+                    request_id,
                     {
                         "task_id": task.task_id,
                         "status": "completed",
@@ -207,7 +207,7 @@ class DelegatorSkillsServer:
                     state["failed_tasks"].append(task.task_id)
                     
                     write_task_status(
-                        incident_id,
+                        request_id,
                         task.task_id,
                         {
                             "status": "failed",
@@ -216,7 +216,7 @@ class DelegatorSkillsServer:
                         }
                     )
                     publish_status_event(
-                        incident_id,
+                        request_id,
                         {
                             "task_id": task.task_id,
                             "status": "failed",
@@ -229,15 +229,15 @@ class DelegatorSkillsServer:
         
         return False
     
-    def get_incident_state(self, incident_id: str) -> dict:
+    def get_request_state(self, request_id: str) -> dict:
         """
-        Internal helper to retrieve local state for an incident.
+        Internal helper to retrieve local state for a request.
         Used for monitoring/debugging.
         
         Args:
-            incident_id: Unique incident identifier
+            request_id: Unique request identifier
             
         Returns:
-            Current incident state or empty dict if not found
+            Current request state or empty dict if not found
         """
-        return self.state_store.get(incident_id, {})
+        return self.state_store.get(request_id, {})

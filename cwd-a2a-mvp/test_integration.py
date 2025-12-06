@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Integration test for CWD A2A MVP.
-Tests the complete incident lifecycle: creation -> delegation -> execution -> status tracking.
+Tests the complete work request lifecycle: creation -> delegation -> execution -> status tracking.
 
 Run this with all three agents running:
   Terminal 1: python coordinator/app.py
@@ -17,8 +17,8 @@ import time
 from datetime import datetime
 
 
-async def test_incident_workflow():
-    """Test complete incident workflow."""
+async def test_request_workflow():
+    """Test complete work request workflow."""
     
     print("\n" + "="*80)
     print("CWD A2A MVP Integration Test")
@@ -55,35 +55,35 @@ async def test_incident_workflow():
             print(f"  ✗ Worker failed: {e}")
             return False
         
-        # Test 2: Submit incident
-        print("\n[2/4] Submitting incident to Coordinator...")
+        # Test 2: Submit work request
+        print("\n[2/4] Submitting request to Coordinator...")
         try:
-            incident_response = await client.post(
-                f"{coordinator_url}/incident",
-                json={"incident_text": "Database connection pool exhausted - service degradation"},
+            request_response = await client.post(
+                f"{coordinator_url}/request",
+                json={"description": "Database connection pool exhausted - service degradation"},
                 timeout=10.0
             )
-            incident_response.raise_for_status()
-            incident_data = incident_response.json()
-            incident_id = incident_data.get("incident_id")
-            task_count = len(incident_data.get("tasks", []))
+            request_response.raise_for_status()
+            request_data = request_response.json()
+            request_id = request_data.get("request_id")
+            task_count = len(request_data.get("tasks", []))
             
-            print(f"  ✓ Incident created: {incident_id}")
+            print(f"  ✓ Request created: {request_id}")
             print(f"  ✓ Generated {task_count} tasks")
             
-            for i, task in enumerate(incident_data.get("tasks", []), 1):
+            for i, task in enumerate(request_data.get("tasks", []), 1):
                 print(f"    Task {i}: {task['description']}")
         
         except Exception as e:
-            print(f"  ✗ Incident submission failed: {e}")
+            print(f"  ✗ Request submission failed: {e}")
             return False
         
         # Test 3: Call Delegator A2A skill directly
         print("\n[3/4] Testing A2A skill communication...")
         try:
             accept_payload = {
-                "incident_id": incident_id,
-                "tasks": incident_data.get("tasks", [])
+                "request_id": request_id,
+                "tasks": request_data.get("tasks", [])
             }
             accept_response = await client.post(
                 f"{delegator_url}/a2a/accept_tasks",
@@ -101,7 +101,7 @@ async def test_incident_workflow():
         # Test 4: Trigger worker delegation
         print("\n[4/4] Triggering worker delegation and execution...")
         try:
-            delegate_payload = {"incident_id": incident_id}
+            delegate_payload = {"request_id": request_id}
             delegate_response = await client.post(
                 f"{delegator_url}/a2a/delegate_to_workers",
                 json=delegate_payload,
@@ -128,7 +128,7 @@ async def test_incident_workflow():
 
 if __name__ == "__main__":
     try:
-        success = asyncio.run(test_incident_workflow())
+        success = asyncio.run(test_request_workflow())
         exit(0 if success else 1)
     except KeyboardInterrupt:
         print("\n\nTest interrupted")

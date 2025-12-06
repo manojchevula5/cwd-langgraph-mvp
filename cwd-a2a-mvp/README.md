@@ -10,12 +10,12 @@ A proof-of-concept implementation demonstrating a **Coordinator-Delegator-Worker
 ┌─────────────────────────────────────────────────────────────────┐
 │                        User Client                              │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ HTTP POST /incident
+                           │ HTTP POST /request
                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │ Coordinator (C) @ 8001                                           │
 │ ─────────────────────────────────────────────────────────────── │
-│ • Receives incident text from user                              │
+│ • Receives request description from user                        │
 │ • Uses stub LLM to decompose into 2-3 tasks                     │
 │ • Maintains local LangGraph state (planning context)            │
 │ • Subscribes to Redis Pub/Sub for status updates                │
@@ -29,8 +29,8 @@ A proof-of-concept implementation demonstrating a **Coordinator-Delegator-Worker
 │ • Receives tasks from Coordinator (A2A)                         │
 │ • Maintains local LangGraph state (routing, worker tracking)    │
 │ • Distributes tasks to Workers via A2A protocol                 │
-│ • Writes task status to Redis hash: incident:{id}:task:{id}    │
-│ • Publishes status to Redis Pub/Sub: incident:{id}:status      │
+│ • Writes task status to Redis hash: request:{id}:task:{id}      │
+│ • Publishes status to Redis Pub/Sub: request:{id}:status        │
 └──────────┬───────────────────────────────────────────────────────┘
            │ A2A: execute_task()
            ▼
@@ -47,8 +47,8 @@ A proof-of-concept implementation demonstrating a **Coordinator-Delegator-Worker
 
 ### Data Flow
 
-1. **Incident Submission**: User sends incident text to Coordinator's `POST /incident`
-2. **Task Planning**: Coordinator uses stub LLM to generate tasks (2-3 per incident)
+1. **Request Submission**: User sends description to Coordinator's `POST /request`
+2. **Task Planning**: Coordinator uses stub LLM to generate tasks (2-3 per request)
 3. **Task Delegation**: Coordinator sends tasks to Delegator via A2A `accept_tasks()` skill
 4. **Worker Assignment**: Delegator assigns tasks to available Workers (round-robin)
 5. **Task Execution**: Delegator calls Worker's A2A `execute_task()` skill for each task
@@ -61,12 +61,12 @@ A proof-of-concept implementation demonstrating a **Coordinator-Delegator-Worker
 ### State Management
 
 #### Shared State (Coordinator ↔ Delegator via Redis)
-- **Redis Hash**: `incident:{incident_id}:task:{task_id}` stores: `status`, `updated_at`, `worker_id`, `message`
-- **Redis Pub/Sub**: Channel `incident:{incident_id}:status` for publishing status events
+- **Redis Hash**: `request:{request_id}:task:{task_id}` stores: `status`, `updated_at`, `worker_id`, `message`
+- **Redis Pub/Sub**: Channel `request:{request_id}:status` for publishing status events
 - **Coordinator** subscribes to updates; **Delegator** publishes updates
 
 #### Local State (Per Agent)
-- **Coordinator**: LangGraph `CoordinatorState` with incident context and tasks
+- **Coordinator**: LangGraph `CoordinatorState` with request context and tasks
 - **Delegator**: LangGraph `DelegatorState` with active tasks, routing info, worker assignments
 - **Worker**: LangGraph `WorkerState` with task execution progress and lifecycle
 
@@ -80,17 +80,17 @@ All inter-agent communication follows the **Agent-to-Agent (A2A) Protocol** via 
 
 | Agent | Endpoint | Method | Skill Name | Input JSON | Output JSON |
 |-------|----------|--------|-----------|-----------|------------|
-| Coordinator | `/a2a/assign_incident_tasks` | POST | assign_incident_tasks | `{incident_text: string}` | `{incident_id, tasks[]}` |
-| Delegator | `/a2a/accept_tasks` | POST | accept_tasks | `{incident_id, tasks[]}` | `{status, task_count}` |
-| Delegator | `/a2a/delegate_to_workers` | POST | delegate_to_workers | `{incident_id}` | `{status, delegated_count}` |
-| Worker | `/a2a/execute_task` | POST | execute_task | `{task, incident_id}` | `{status, message, timestamp}` |
+| Coordinator | `/a2a/assign_tasks` | POST | assign_tasks | `{description: string}` | `{request_id, tasks[]}` |
+| Delegator | `/a2a/accept_tasks` | POST | accept_tasks | `{request_id, tasks[]}` | `{status, task_count}` |
+| Delegator | `/a2a/delegate_to_workers` | POST | delegate_to_workers | `{request_id}` | `{status, delegated_count}` |
+| Worker | `/a2a/execute_task` | POST | execute_task | `{task, request_id}` | `{status, message, timestamp}` |
 
 **Example A2A Call** (Coordinator → Delegator):
 ```bash
 curl -X POST http://localhost:8002/a2a/accept_tasks \
   -H "Content-Type: application/json" \
   -d '{
-    "incident_id": "550e8400-e29b-41d4-a716-446655440000",
+    "request_id": "550e8400-e29b-41d4-a716-446655440000",
     "tasks": [{"task_id": "...", "description": "..."}]
   }'
 ```
@@ -104,7 +104,7 @@ cwd-a2a-mvp/
 ├── README.md                   # This file
 ├── common/
 │   ├── __init__.py
-│   ├── models.py               # Pydantic: Incident, Task, StatusUpdate
+│   ├── models.py               # Pydantic: WorkItem, Task, StatusUpdate
 │   ├── llm_stub.py             # Stub LLM (easily swappable for OpenAI/Gemini)
 │   ├── a2a_client.py           # A2A client factory helper
 │   ├── langgraph_state.py      # TypedDict state definitions for all agents
@@ -112,15 +112,15 @@ cwd-a2a-mvp/
 ├── coordinator/
 │   ├── __init__.py
 │   ├── app.py                  # FastAPI/A2A server on port 8001
-│   └── a2a_server.py           # Coordinator skills: assign_incident_tasks
+│   └── a2a_server.py           # Coordinator skills: assign_tasks
 ├── delegator/
 │   ├── __init__.py
 │   ├── app.py                  # FastAPI/A2A server on port 8002
 │   └── a2a_server.py           # Delegator skills: accept_tasks, delegate_to_workers
 └── worker/
-    ├── __init__.py
-    ├── app.py                  # FastAPI/A2A server on port 8003
-    └── a2a_server.py           # Worker skill: execute_task
+│   ├── __init__.py
+│   ├── app.py                  # FastAPI/A2A server on port 8003
+│   └── a2a_server.py           # Worker skill: execute_task
 ```
 
 ## Installation & Setup
@@ -196,21 +196,21 @@ Worker agent starting on port 8003
 
 ## Usage Demo
 
-### Submit an Incident
+### Submit a Work Request
 
-In a new terminal, submit an incident to the Coordinator:
+In a new terminal, submit a request to the Coordinator:
 
 ```bash
-curl -X POST http://localhost:8001/incident \
+curl -X POST http://localhost:8001/request \
   -H "Content-Type: application/json" \
-  -d '{"incident_text": "Service X is experiencing errors and timeouts"}'
+  -d '{"description": "Service X is experiencing errors and timeouts"}'
 ```
 
 **Expected Response**:
 ```json
 {
   "status": "success",
-  "incident_id": "550e8400-e29b-41d4-a716-446655440000",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
   "tasks": [
     {
       "task_id": "...",
@@ -228,7 +228,7 @@ curl -X POST http://localhost:8001/incident \
       "priority": "normal"
     }
   ],
-  "message": "Incident 550e8400-e29b-41d4-a716-446655440000 created with 3 tasks. Monitoring status updates..."
+  "message": "Request 550e8400-e29b-41d4-a716-446655440000 created with 3 tasks. Monitoring status updates..."
 }
 ```
 
@@ -281,7 +281,7 @@ python test_integration.py
 
 This tests:
 1. Agent health checks
-2. Incident creation via HTTP
+2. Request creation via HTTP
 3. A2A skill communication (Delegator accept_tasks)
 4. Task delegation and execution
 5. Complete workflow end-to-end
@@ -314,15 +314,15 @@ The stub LLM is easily replaceable. To add OpenAI support:
 
 1. **Edit `common/llm_stub.py`**:
    ```python
-   def incident_to_tasks(incident_text: str) -> list[Task]:
+   def request_to_tasks(description: str) -> list[Task]:
        provider = get_llm_provider()
        
        if provider == "openai":
-           return openai_incident_to_tasks(incident_text)
+           return openai_request_to_tasks(description)
        # ... rest of logic
    ```
 
-2. **Implement `openai_incident_to_tasks()`** with OpenAI SDK calls.
+2. **Implement `openai_request_to_tasks()`** with OpenAI SDK calls.
 
 3. **Set environment variable**:
    ```bash
@@ -356,14 +356,14 @@ Example:
 ```python
 # Server: expose skill
 @app.a2a.skill(name="accept_tasks")
-async def a2a_accept_tasks(incident_id: str, tasks: list[dict]) -> dict:
-    return delegator_skills.accept_tasks(incident_id, tasks)
+async def a2a_accept_tasks(request_id: str, tasks: list[dict]) -> dict:
+    return delegator_skills.accept_tasks(request_id, tasks)
 
 # Client: call skill
 delegator_client = create_delegator_client()
 result = await delegator_client.call_skill(
     skill_name="accept_tasks",
-    incident_id=incident_id,
+    request_id=request_id,
     tasks=task_dicts
 )
 ```
@@ -375,13 +375,13 @@ Each agent maintains a local TypedDict for state management:
 ```python
 # Define state schema
 class CoordinatorState(TypedDict):
-    incident_id: str
+    request_id: str
     tasks: list[Task]
     status: str
     messages: list[dict]
 
 # Initialize state
-state = create_coordinator_state(incident_id, incident_text)
+state = create_coordinator_state(request_id, description)
 
 # Update state
 state["status"] = "assigned"
@@ -396,14 +396,14 @@ Only Coordinator and Delegator use Redis:
 # Delegator writes task status
 from common.redis_utils import write_task_status, publish_status_event
 
-write_task_status(incident_id, task_id, {
+write_task_status(request_id, task_id, {
     "status": "in_progress",
     "worker_id": "http://localhost:8003",
     "progress": 50
 })
 
 # Publish to Pub/Sub
-publish_status_event(incident_id, {
+publish_status_event(request_id, {
     "task_id": task_id,
     "status": "in_progress",
     "progress": 50
@@ -411,7 +411,7 @@ publish_status_event(incident_id, {
 
 # Coordinator subscribes
 from common.redis_utils import subscribe_to_status_events
-subscribe_to_status_events(incident_id, callback_fn)
+subscribe_to_status_events(request_id, callback_fn)
 ```
 
 **Workers do not import `redis_utils.py`** — architectural constraint maintained.
@@ -422,7 +422,7 @@ Delegator implements simple retry logic:
 
 ```python
 # In delegator/a2a_server.py
-async def execute_task_on_worker(self, incident_id, task, worker_url, retry_count=1):
+async def execute_task_on_worker(self, request_id, task, worker_url, retry_count=1):
     attempt = 0
     while attempt <= retry_count:
         try:
@@ -447,8 +447,8 @@ All agents log with consistent format:
 
 Example output:
 ```
-2024-01-15T10:30:45 [COORDINATOR] INFO: New incident received: 550e8400... - Service X is erroring...
-2024-01-15T10:30:46 [DELEGATOR] INFO: accept_tasks called: incident_id=550e8400..., task_count=3
+2024-01-15T10:30:45 [COORDINATOR] INFO: New request received: 550e8400... - Service X is erroring...
+2024-01-15T10:30:46 [DELEGATOR] INFO: accept_tasks called: request_id=550e8400..., task_count=3
 2024-01-15T10:30:47 [WORKER] INFO: Task execution started
 ```
 
@@ -469,9 +469,9 @@ curl http://localhost:8001/health
 
 Monitor Redis messages in real-time:
 ```bash
-# In another terminal, subscribe to incident status
+# In another terminal, subscribe to request status
 redis-cli
-> SUBSCRIBE "incident:*:status"
+> SUBSCRIBE "request:*:status"
 ```
 
 ## Development Notes
@@ -482,8 +482,8 @@ For manual testing without full integration:
 
 ```python
 # Test stub LLM directly
-from common.llm_stub import incident_to_tasks
-tasks = incident_to_tasks("Service is down")
+from common.llm_stub import request_to_tasks
+tasks = request_to_tasks("Service is down")
 print(tasks)
 
 # Test Redis utils
@@ -493,7 +493,7 @@ assert health_check()
 # Test Coordinator skill
 from coordinator.a2a_server import CoordinatorSkillsServer
 coordinator = CoordinatorSkillsServer()
-result = coordinator.assign_incident_tasks("Test incident", "test-id")
+result = coordinator.assign_tasks("Test request", "test-id")
 print(result)
 ```
 
@@ -550,7 +550,7 @@ logging.getLogger("a2a").setLevel(logging.DEBUG)
 - **Solution**:
   - Verify Redis is running
   - Check Delegator is actually calling `publish_status_event()`
-  - Monitor Redis directly: `redis-cli SUBSCRIBE "incident:*:status"`
+  - Monitor Redis directly: `redis-cli SUBSCRIBE "request:*:status"`
 
 ## References
 

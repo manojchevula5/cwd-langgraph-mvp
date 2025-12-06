@@ -7,13 +7,13 @@ import os
 from common.models import Task
 
 
-def stub_incident_to_tasks(incident_text: str) -> list[Task]:
+def stub_request_to_tasks(description: str) -> list[Task]:
     """
-    Stub LLM that deterministically converts incident text to 2-3 tasks.
+    Stub LLM that deterministically converts description to 2-3 tasks.
     In production, this would call OpenAI, Gemini, or another LLM API.
     
     Args:
-        incident_text: Description of the incident
+        description: Description of the work request
         
     Returns:
         List of Task objects
@@ -42,12 +42,12 @@ def get_llm_provider() -> str:
     return os.getenv("LLM_PROVIDER", "stub")
 
 
-def incident_to_tasks(incident_text: str) -> list[Task]:
+def request_to_tasks(description: str) -> list[Task]:
     """
     Route to appropriate LLM implementation based on LLM_PROVIDER env var.
     
     Args:
-        incident_text: Description of the incident
+        description: Description of the work request
         
     Returns:
         List of Task objects
@@ -55,7 +55,7 @@ def incident_to_tasks(incident_text: str) -> list[Task]:
     provider = get_llm_provider()
     
     if provider == "stub":
-        return stub_incident_to_tasks(incident_text)
+        return stub_request_to_tasks(description)
     elif provider == "openai":
         # Placeholder: would import OpenAI and call API
         raise NotImplementedError("OpenAI provider not yet implemented")

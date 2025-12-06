@@ -1,11 +1,11 @@
 """
-Coordinator agent - orchestrates incident response.
+Coordinator agent - orchestrates work result.
 
 Listens on http://localhost:8001
 
 Responsibilities:
-- Expose A2A skill: assign_incident_tasks(incident_text) -> {incident_id, tasks[]}
-- Accept HTTP POST /incident from users
+- Expose A2A skill: assign_tasks(description) -> {request_id, tasks[]}
+- Accept HTTP POST /request from users
 - Delegate tasks to Delegator via A2A protocol
 - Subscribe to Redis Pub/Sub for status updates and log them
 """
@@ -27,9 +27,9 @@ from pydantic import BaseModel
 import uvicorn
 import httpx
 
-from common.models import IncidentRequest, TaskAssignmentResponse, Task
+from common.models import WorkRequest, TaskAssignmentResponse, Task
 from common.langgraph_state import create_coordinator_state, log_state_message
-from common.llm_stub import incident_to_tasks
+from common.llm_stub import request_to_tasks
 from common.redis_utils import subscribe_to_status_events, health_check
 from coordinator.a2a_server import CoordinatorSkillsServer
 
@@ -52,7 +52,7 @@ def status_update_callback(event: dict):
     Callback for Redis Pub/Sub status updates.
     Logs and displays status updates to console.
     """
-    incident_id = event.get("incident_id", "unknown")
+    request_id = event.get("request_id", "unknown")
     task_id = event.get("task_id", "unknown")
     status = event.get("status", "unknown")
     progress = event.get("progress", None)
@@ -69,32 +69,32 @@ def status_update_callback(event: dict):
     print(f"  ✓ {log_msg}")
 
 
-def subscribe_to_incident_updates(incident_id: str):
+def subscribe_to_request_updates(request_id: str):
     """
-    Subscribe to Redis Pub/Sub updates for an incident in a background thread.
+    Subscribe to Redis Pub/Sub updates for a request in a background thread.
     
     Args:
-        incident_id: Unique incident identifier
+        request_id: Unique request identifier
     """
     def subscription_thread():
-        logger.info(f"Starting Redis subscription for incident {incident_id}")
+        logger.info(f"Starting Redis subscription for request {request_id}")
         try:
-            subscribe_to_status_events(incident_id, status_update_callback)
+            subscribe_to_status_events(request_id, status_update_callback)
         except Exception as e:
-            logger.error(f"Subscription error for {incident_id}: {e}")
+            logger.error(f"Subscription error for {request_id}: {e}")
     
     # Start subscription in background thread
     thread = threading.Thread(target=subscription_thread, daemon=True)
-    active_subscriptions[incident_id] = thread
+    active_subscriptions[request_id] = thread
     thread.start()
 
 
-async def delegate_tasks_to_delegator(incident_id: str, tasks: list[Task]):
+async def delegate_tasks_to_delegator(request_id: str, tasks: list[Task]):
     """
     Send tasks to Delegator via A2A HTTP protocol.
     
     Args:
-        incident_id: Unique incident identifier
+        request_id: Unique request identifier
         tasks: List of tasks to delegate
     """
     try:
@@ -102,10 +102,10 @@ async def delegate_tasks_to_delegator(incident_id: str, tasks: list[Task]):
         
         # Step 1: Call accept_tasks
         accept_tasks_url = f"{delegator_url}/a2a/accept_tasks"
-        logger.info(f"Calling delegator A2A skill: accept_tasks for incident {incident_id}")
+        logger.info(f"Calling delegator A2A skill: accept_tasks for request {request_id}")
         
         payload = {
-            "incident_id": incident_id,
+            "request_id": request_id,
             "tasks": [t.model_dump() for t in tasks]
         }
         
@@ -114,20 +114,20 @@ async def delegate_tasks_to_delegator(incident_id: str, tasks: list[Task]):
             response.raise_for_status()
             result = response.json()
         
-        logger.info(f"Delegator accepted tasks for incident {incident_id}: {result}")
+        logger.info(f"Delegator accepted tasks for request {request_id}: {result}")
         
         # Step 2: Trigger delegation to workers
         delegate_url = f"{delegator_url}/a2a/delegate_to_workers"
-        logger.info(f"Calling delegator A2A skill: delegate_to_workers for incident {incident_id}")
+        logger.info(f"Calling delegator A2A skill: delegate_to_workers for request {request_id}")
         
-        delegate_payload = {"incident_id": incident_id}
+        delegate_payload = {"request_id": request_id}
         
         async with httpx.AsyncClient() as client:
             response = await client.post(delegate_url, json=delegate_payload, timeout=30.0)
             response.raise_for_status()
             delegate_result = response.json()
         
-        logger.info(f"Delegator delegated tasks to workers for incident {incident_id}: {delegate_result}")
+        logger.info(f"Delegator delegated tasks to workers for request {request_id}: {delegate_result}")
     except Exception as e:
         logger.error(f"Failed to delegate tasks to delegator: {e}")
 
@@ -152,7 +152,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Coordinator Agent",
-    description="CWD Coordinator - Incident orchestration and task planning",
+    description="CWD Coordinator - Work request orchestration and task planning",
     lifespan=lifespan
 )
 
@@ -168,65 +168,65 @@ async def health():
     }
 
 
-@app.post("/incident")
-async def create_incident(request: IncidentRequest) -> dict:
+@app.post("/request")
+async def create_request(request: WorkRequest) -> dict:
     """
-    HTTP endpoint to submit an incident.
-    Internally invokes assign_incident_tasks and delegates to Delegator.
+    HTTP endpoint to submit a work request.
+    Internally invokes assign_tasks and delegates to Delegator.
     
     Args:
-        request: IncidentRequest with incident_text
+        request: WorkRequest with description
         
     Returns:
-        JSON response with incident_id and tasks
+        JSON response with request_id and tasks
     """
     try:
-        incident_id = str(uuid.uuid4())
-        logger.info(f"New incident received: {incident_id} - {request.incident_text[:50]}...")
+        request_id = str(uuid.uuid4())
+        logger.info(f"New request received: {request_id} - {request.description[:50]}...")
         
         # Call A2A skill to assign tasks
-        response = coordinator_skills.assign_incident_tasks(
-            request.incident_text,
-            incident_id
+        response = coordinator_skills.assign_tasks(
+            request.description,
+            request_id
         )
         
-        # Subscribe to status updates for this incident
-        subscribe_to_incident_updates(incident_id)
-        logger.info(f"Subscribed to status updates for incident {incident_id}")
+        # Subscribe to status updates for this request
+        subscribe_to_request_updates(request_id)
+        logger.info(f"Subscribed to status updates for request {request_id}")
         
         # Delegate tasks to Delegator asynchronously
-        asyncio.create_task(delegate_tasks_to_delegator(incident_id, response.tasks))
+        asyncio.create_task(delegate_tasks_to_delegator(request_id, response.tasks))
         
         return {
             "status": "success",
-            "incident_id": incident_id,
+            "request_id": request_id,
             "tasks": [t.model_dump() for t in response.tasks],
-            "message": f"Incident {incident_id} created with {len(response.tasks)} tasks. Monitoring status updates..."
+            "message": f"Request {request_id} created with {len(response.tasks)} tasks. Monitoring status updates..."
         }
     
     except Exception as e:
-        logger.error(f"Error creating incident: {e}")
+        logger.error(f"Error creating request: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/a2a/assign_incident_tasks")
-async def a2a_assign_incident_tasks(request: IncidentRequest) -> dict:
+@app.post("/a2a/assign_tasks")
+async def a2a_assign_tasks(request: WorkRequest) -> dict:
     """
-    A2A skill endpoint: assign_incident_tasks
+    A2A skill endpoint: assign_tasks
     Called by other agents via A2A HTTP protocol.
     
     Args:
-        request: IncidentRequest with incident_text
+        request: WorkRequest with description
         
     Returns:
-        JSON response with incident_id and tasks
+        JSON response with request_id and tasks
     """
     try:
-        incident_id = str(uuid.uuid4())
-        response = coordinator_skills.assign_incident_tasks(request.incident_text, incident_id)
+        request_id = str(uuid.uuid4())
+        response = coordinator_skills.assign_tasks(request.description, request_id)
         return response.model_dump()
     except Exception as e:
-        logger.error(f"Error in A2A assign_incident_tasks: {e}")
+        logger.error(f"Error in A2A assign_tasks: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

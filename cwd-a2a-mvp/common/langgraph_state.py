@@ -11,10 +11,10 @@ from common.models import Task
 class CoordinatorState(TypedDict):
     """
     Local state for Coordinator agent.
-    Tracks incident planning and task assignment context.
+    Tracks work request planning and task assignment context.
     """
-    incident_id: str
-    incident_text: str
+    request_id: str
+    description: str
     tasks: list[Task]
     status: str  # planning, assigned, monitoring, completed
     messages: list[dict]  # List of {timestamp, message} for local logging
@@ -26,7 +26,7 @@ class DelegatorState(TypedDict):
     Local state for Delegator agent.
     Tracks task routing and worker assignments.
     """
-    incident_id: str
+    request_id: str
     tasks: list[Task]
     active_tasks: dict  # {task_id: {status, worker_url, started_at}}
     completed_tasks: list[str]  # list of task_ids
@@ -49,11 +49,11 @@ class WorkerState(TypedDict):
     messages: list[dict]  # Execution log
 
 
-def create_coordinator_state(incident_id: str, incident_text: str) -> CoordinatorState:
-    """Initialize coordinator state for a new incident."""
+def create_coordinator_state(request_id: str, description: str) -> CoordinatorState:
+    """Initialize coordinator state for a new work request."""
     return {
-        "incident_id": incident_id,
-        "incident_text": incident_text,
+        "request_id": request_id,
+        "description": description,
         "tasks": [],
         "status": "planning",
         "messages": [],
@@ -61,10 +61,10 @@ def create_coordinator_state(incident_id: str, incident_text: str) -> Coordinato
     }
 
 
-def create_delegator_state(incident_id: str, tasks: list[Task]) -> DelegatorState:
-    """Initialize delegator state for incident tasks."""
+def create_delegator_state(request_id: str, tasks: list[Task]) -> DelegatorState:
+    """Initialize delegator state for request tasks."""
     return {
-        "incident_id": incident_id,
+        "request_id": request_id,
         "tasks": tasks,
         "active_tasks": {},
         "completed_tasks": [],

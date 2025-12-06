@@ -25,7 +25,7 @@ class WorkerSkillsServer:
     async def execute_task(
         self,
         task: dict,
-        incident_id: str,
+        request_id: str,
         callback_url: str = None
     ) -> dict:
         """
@@ -39,7 +39,7 @@ class WorkerSkillsServer:
         
         Args:
             task: Task dictionary with task_id and description
-            incident_id: Unique incident identifier
+            request_id: Unique request identifier
             callback_url: Optional URL for status callbacks (Delegator address)
             
         Returns:

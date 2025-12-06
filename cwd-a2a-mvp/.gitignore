@@ -58,3 +58,6 @@ dump.rdb
 
 # Task runner output
 .task/
+
+# Debug scripts
+debug_import*.py
