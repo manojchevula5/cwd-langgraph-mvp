@@ -14,6 +14,7 @@ class Task(BaseModel):
     description: str
     priority: str = "normal"  # low, normal, high
     assigned_worker_url: Optional[str] = None
+    mlflow_run_id: Optional[str] = None
     
     class Config:
         json_schema_extra = {

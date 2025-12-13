@@ -9,6 +9,7 @@ from datetime import datetime
 
 from common.models import Task, StatusUpdate
 from common.langgraph_state import create_worker_state, log_state_message
+from common.mlflow_utils import log_agent_communication
 
 logger = logging.getLogger(__name__)
 
@@ -81,12 +82,26 @@ class WorkerSkillsServer:
             log_state_message(state, "Task execution completed successfully")
             logger.info(f"Task {task_id} completed successfully")
             
-            return {
+            timestamp = datetime.utcnow().isoformat()
+            result = {
                 "status": "completed",
                 "task_id": task_id,
                 "message": "Task executed successfully",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": timestamp
             }
+            
+            # Log to MLflow
+            log_agent_communication(
+                request_id=request_id,
+                sender="Worker",
+                receiver="Delegator", 
+                action="execute_task_response",
+                payload={"task_id": task_id, "status": "completed"},
+                response=result,
+                parent_run_id=task_obj.mlflow_run_id
+            )
+            
+            return result
         
         except Exception as e:
             state["status"] = "failed"

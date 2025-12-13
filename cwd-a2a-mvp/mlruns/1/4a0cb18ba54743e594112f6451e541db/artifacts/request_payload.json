@@ -1,0 +1,10 @@
+{
+  "task": {
+    "task_id": "57f50f83-a486-4ce8-a1dc-d0333c82090d",
+    "description": "Diagnose service status and root cause",
+    "priority": "high",
+    "assigned_worker_url": "http://localhost:8003"
+  },
+  "request_id": "e8c8e1ca-0a09-4294-9543-16ab98166ba3",
+  "callback_url": "http://localhost:8003"
+}

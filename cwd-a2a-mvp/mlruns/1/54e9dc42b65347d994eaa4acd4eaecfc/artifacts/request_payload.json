@@ -1,0 +1,23 @@
+{
+  "request_id": "e8c8e1ca-0a09-4294-9543-16ab98166ba3",
+  "tasks": [
+    {
+      "task_id": "57f50f83-a486-4ce8-a1dc-d0333c82090d",
+      "description": "Diagnose service status and root cause",
+      "priority": "high",
+      "assigned_worker_url": null
+    },
+    {
+      "task_id": "c4c4057a-5118-42a3-836a-d0a9415c4996",
+      "description": "Apply fix or mitigation",
+      "priority": "high",
+      "assigned_worker_url": null
+    },
+    {
+      "task_id": "492f2cd5-15df-4f24-862b-87cf9ed258f7",
+      "description": "Verify recovery and health check",
+      "priority": "normal",
+      "assigned_worker_url": null
+    }
+  ]
+}

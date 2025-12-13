@@ -1,0 +1,11 @@
+{
+  "task": {
+    "task_id": "c681119c-bf88-4f57-99a1-87b5d28b40ed",
+    "description": "Verify recovery and health check",
+    "priority": "normal",
+    "assigned_worker_url": "http://localhost:8003",
+    "mlflow_run_id": "5dc164cc98eb44139ebd3a1fa522488d"
+  },
+  "request_id": "f41ee8f9-e977-4a65-a1ed-81af69f5633f",
+  "callback_url": "http://localhost:8003"
+}

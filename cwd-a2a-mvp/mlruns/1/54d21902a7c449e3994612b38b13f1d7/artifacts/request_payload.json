@@ -1,0 +1,26 @@
+{
+  "request_id": "f41ee8f9-e977-4a65-a1ed-81af69f5633f",
+  "tasks": [
+    {
+      "task_id": "21a9152d-051e-421f-bf45-b6e5913d3788",
+      "description": "Diagnose service status and root cause",
+      "priority": "high",
+      "assigned_worker_url": null,
+      "mlflow_run_id": "5dc164cc98eb44139ebd3a1fa522488d"
+    },
+    {
+      "task_id": "654c3af6-b370-4384-90ab-b38f836699d4",
+      "description": "Apply fix or mitigation",
+      "priority": "high",
+      "assigned_worker_url": null,
+      "mlflow_run_id": "5dc164cc98eb44139ebd3a1fa522488d"
+    },
+    {
+      "task_id": "c681119c-bf88-4f57-99a1-87b5d28b40ed",
+      "description": "Verify recovery and health check",
+      "priority": "normal",
+      "assigned_worker_url": null,
+      "mlflow_run_id": "5dc164cc98eb44139ebd3a1fa522488d"
+    }
+  ]
+}

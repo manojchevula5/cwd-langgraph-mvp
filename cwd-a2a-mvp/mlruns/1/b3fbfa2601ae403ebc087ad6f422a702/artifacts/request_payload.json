@@ -1,0 +1,10 @@
+{
+  "task": {
+    "task_id": "7b32f74e-a931-40f8-abc5-397fe7972c46",
+    "description": "Apply fix or mitigation",
+    "priority": "high",
+    "assigned_worker_url": "http://localhost:8003"
+  },
+  "request_id": "dfeb6a91-c3de-4055-8bd2-865ffb485654",
+  "callback_url": "http://localhost:8003"
+}

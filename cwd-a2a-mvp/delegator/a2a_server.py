@@ -11,6 +11,7 @@ from typing import Optional
 from common.models import Task
 from common.langgraph_state import create_delegator_state, log_state_message
 from common.redis_utils import write_task_status, publish_status_event
+from common.mlflow_utils import log_agent_communication
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,17 @@ class DelegatorSkillsServer:
                     response = await client.post(skill_url, json=payload, timeout=30.0)
                     response.raise_for_status()
                     result = response.json()
+
+                # Log to MLflow
+                log_agent_communication(
+                    request_id=request_id,
+                    sender="Delegator",
+                    receiver=f"Worker({worker_url})",
+                    action="execute_task",
+                    payload=payload,
+                    response=result,
+                    parent_run_id=task.mlflow_run_id
+                )
                 
                 # If successful, mark complete
                 state["active_tasks"][task.task_id]["status"] = "completed"

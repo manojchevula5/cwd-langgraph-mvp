@@ -1,0 +1,10 @@
+{
+  "task": {
+    "task_id": "492f2cd5-15df-4f24-862b-87cf9ed258f7",
+    "description": "Verify recovery and health check",
+    "priority": "normal",
+    "assigned_worker_url": "http://localhost:8003"
+  },
+  "request_id": "e8c8e1ca-0a09-4294-9543-16ab98166ba3",
+  "callback_url": "http://localhost:8003"
+}

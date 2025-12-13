@@ -27,6 +27,7 @@ import httpx
 
 from common.models import Task, StatusUpdate
 from common.redis_utils import health_check
+from common.mlflow_utils import setup_mlflow
 from delegator.a2a_server import DelegatorSkillsServer
 
 # Configure logging
@@ -44,11 +45,13 @@ class AcceptTasksRequest(BaseModel):
     """Request to accept tasks from Coordinator."""
     request_id: str
     tasks: list[dict]
+    mlflow_run_id: str = None
 
 
 class DelegateTasksRequest(BaseModel):
     """Request to delegate tasks to workers."""
     request_id: str
+    mlflow_run_id: str = None
 
 
 async def lifespan(app: FastAPI):
@@ -57,6 +60,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Delegator agent starting on port 8002")
+    setup_mlflow()
     redis_ok = health_check()
     if not redis_ok:
         logger.warning("Redis not available - task status won't be persisted")

@@ -31,6 +31,8 @@ from common.models import WorkRequest, TaskAssignmentResponse, Task
 from common.langgraph_state import create_coordinator_state, log_state_message
 from common.llm_stub import request_to_tasks
 from common.redis_utils import subscribe_to_status_events, health_check
+from common.redis_utils import subscribe_to_status_events, health_check
+from common.mlflow_utils import setup_mlflow, log_agent_communication, create_root_run
 from coordinator.a2a_server import CoordinatorSkillsServer
 
 # Configure logging
@@ -116,11 +118,25 @@ async def delegate_tasks_to_delegator(request_id: str, tasks: list[Task]):
         
         logger.info(f"Delegator accepted tasks for request {request_id}: {result}")
         
+        # Get run_id from tasks if available (assuming all tasks have same run_id)
+        parent_run_id = tasks[0].mlflow_run_id if tasks else None
+
+        # Log to MLflow
+        log_agent_communication(
+            request_id=request_id,
+            sender="Coordinator",
+            receiver="Delegator",
+            action="accept_tasks",
+            payload=payload,
+            response=result,
+            parent_run_id=parent_run_id
+        )
+        
         # Step 2: Trigger delegation to workers
         delegate_url = f"{delegator_url}/a2a/delegate_to_workers"
         logger.info(f"Calling delegator A2A skill: delegate_to_workers for request {request_id}")
         
-        delegate_payload = {"request_id": request_id}
+        delegate_payload = {"request_id": request_id, "mlflow_run_id": parent_run_id}
         
         async with httpx.AsyncClient() as client:
             response = await client.post(delegate_url, json=delegate_payload, timeout=30.0)
@@ -128,6 +144,17 @@ async def delegate_tasks_to_delegator(request_id: str, tasks: list[Task]):
             delegate_result = response.json()
         
         logger.info(f"Delegator delegated tasks to workers for request {request_id}: {delegate_result}")
+
+        # Log to MLflow
+        log_agent_communication(
+            request_id=request_id,
+            sender="Coordinator",
+            receiver="Delegator",
+            action="delegate_to_workers",
+            payload=delegate_payload,
+            response=delegate_result,
+            parent_run_id=parent_run_id
+        )
     except Exception as e:
         logger.error(f"Failed to delegate tasks to delegator: {e}")
 
@@ -139,6 +166,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Coordinator agent starting on port 8001")
+    setup_mlflow()
     redis_ok = health_check()
     if not redis_ok:
         logger.warning("Redis not available - status updates won't be persisted")
@@ -184,11 +212,20 @@ async def create_request(request: WorkRequest) -> dict:
         request_id = str(uuid.uuid4())
         logger.info(f"New request received: {request_id} - {request.description[:50]}...")
         
+        # Start MLflow root run
+        root_run_id = create_root_run(request_id, request.description)
+        logger.info(f"Created MLflow root run: {root_run_id}")
+        
         # Call A2A skill to assign tasks
         response = coordinator_skills.assign_tasks(
             request.description,
             request_id
         )
+        
+        # Add run_id to tasks
+        if root_run_id:
+            for task in response.tasks:
+                task.mlflow_run_id = root_run_id
         
         # Subscribe to status updates for this request
         subscribe_to_request_updates(request_id)
@@ -200,6 +237,7 @@ async def create_request(request: WorkRequest) -> dict:
         return {
             "status": "success",
             "request_id": request_id,
+            "root_run_id": root_run_id,
             "tasks": [t.model_dump() for t in response.tasks],
             "message": f"Request {request_id} created with {len(response.tasks)} tasks. Monitoring status updates..."
         }
