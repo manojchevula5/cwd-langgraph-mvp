@@ -33,7 +33,7 @@ def create_root_run(request_id: str, description: str = "") -> Optional[str]:
     Returns the run_id.
     """
     try:
-        run_name = f"request_id::{request_id[:8]}"
+        run_name = f"request_id::{request_id}"
         with mlflow.start_run(run_name=run_name) as run:
             mlflow.set_tag("request_id", request_id)
             mlflow.set_tag("role", "root")
